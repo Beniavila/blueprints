@@ -1,0 +1,74 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-04-30",
+  "project": "metal-gear",
+  "adrs": [
+    {
+      "id": "ADR-0001",
+      "title": "Arquitectura por capas con migración incremental desde runtime legacy",
+      "status": "accepted",
+      "tags": ["architecture", "migration", "domain-driven"],
+      "related": ["ADR-0002", "ADR-0003", "ADR-0004", "ADR-0005"],
+      "consumes": [],
+      "publishes": []
+    },
+    {
+      "id": "ADR-0002",
+      "title": "Contratos MQTT separados por dominio (legacy, OTAP Ender y comandos locales)",
+      "status": "accepted",
+      "tags": ["mqtt", "integration", "contracts"],
+      "related": ["ADR-0001", "ADR-0003", "ADR-0005"],
+      "consumes": [
+        "cl-req/gw/{gw_id}",
+        "cl-req/gw/gateway_data",
+        "ender/command/otap/{step}/{gateway_id}",
+        "gateway/command/wirepas/{gw_id}"
+      ],
+      "publishes": [
+        "cl-res/gw/gateway_data",
+        "ender/status/otap/{step}/{gateway_id}",
+        "gateway/response/wirepas/{gw_id}"
+      ]
+    },
+    {
+      "id": "ADR-0003",
+      "title": "OTAP Ender modelado como máquina de campaña con estado compartido y cleanup",
+      "status": "accepted",
+      "tags": ["otap", "wirepas", "state-machine"],
+      "related": ["ADR-0001", "ADR-0002", "ADR-0004", "ADR-0005"],
+      "consumes": ["ender/command/otap/{step}/{gateway_id}"],
+      "publishes": ["ender/status/otap/{step}/{gateway_id}"]
+    },
+    {
+      "id": "ADR-0004",
+      "title": "Watchdogs como subsistema de resiliencia y telemetría operativa",
+      "status": "accepted",
+      "tags": ["watchdog", "reliability", "observability"],
+      "related": ["ADR-0001", "ADR-0003", "ADR-0005"],
+      "consumes": [],
+      "publishes": ["/tmp/metal-gear-status.json"]
+    },
+    {
+      "id": "ADR-0005",
+      "title": "Adaptadores de infraestructura como frontera de integración con sistemas externos",
+      "status": "accepted",
+      "tags": ["ports-and-adapters", "integration", "security"],
+      "related": ["ADR-0001", "ADR-0002", "ADR-0003", "ADR-0004"],
+      "consumes": [
+        "Linux host capabilities",
+        "wirepas_mqtt_library",
+        "MQTT brokers"
+      ],
+      "publishes": []
+    }
+  ],
+  "edges": [
+    { "from": "ADR-0001", "to": "ADR-0002", "type": "relates_to" },
+    { "from": "ADR-0001", "to": "ADR-0003", "type": "relates_to" },
+    { "from": "ADR-0001", "to": "ADR-0004", "type": "relates_to" },
+    { "from": "ADR-0001", "to": "ADR-0005", "type": "relates_to" },
+    { "from": "ADR-0002", "to": "ADR-0003", "type": "informs" },
+    { "from": "ADR-0005", "to": "ADR-0002", "type": "enables" },
+    { "from": "ADR-0005", "to": "ADR-0004", "type": "enables" }
+  ]
+}

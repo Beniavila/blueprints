@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Blueprints — Helios IoT Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #0a1d3a; overflow: hidden; }
+  #root { position: fixed; inset: 0; }
+  *::selection { background: rgba(120,180,255,.35); }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="overlay.jsx"></script>
+<script type="text/babel" src="canvas.jsx"></script>
+<script type="text/babel" src="settings.jsx"></script>
+<script type="text/babel" src="notes.jsx"></script>
+<script type="text/babel" src="adrs.jsx"></script>
+<script type="text/babel" src="containers.jsx"></script>
+<script type="text/babel" src="flows.jsx"></script>
+<script type="text/babel" src="edges.jsx"></script>
+
+<script type="text/babel">
+  const { useState, useEffect, useMemo, useCallback } = React;
+
+  // Default settings — saved to localStorage by App so they persist locally
+  // without depending on the editor's tweaks system.
+  const DEFAULT_SETTINGS = {
+    theme: "blueprint",
+    level: "context",
+    showExternals: true,
+    flowAnimate: true,
+  };
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem("blueprint.settings");
+      return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
+    } catch (_) { return DEFAULT_SETTINGS; }
+  }
+
+  function normalizeAdrStatus(status) {
+    const s = String(status || "accepted").toLowerCase();
+    if (s === "deprecated") return "obsolete";
+    return s;
+  }
+
+  function getBlueprintAdrs(bp) {
+    const byId = {};
+    Object.entries((bp && bp.adrCatalog) || {}).forEach(([id, raw]) => {
+      byId[id] = {
+        id,
+        ...raw,
+        label: raw.label || id,
+        status: normalizeAdrStatus(raw.status),
+      };
+    });
+    ((bp && bp.adrs) || []).forEach((raw) => {
+      if (!raw || !raw.id) return;
+      byId[raw.id] = {
+        ...raw,
+        label: raw.label || raw.id,
+        status: normalizeAdrStatus(raw.status),
+      };
+    });
+    ((bp && bp.containers) || []).forEach((n) => {
+      if (n.type !== "adr") return;
+      const id = n.label || n.id;
+      if (!id || byId[id]) return;
+      byId[id] = {
+        id,
+        label: n.label || id,
+        title: n.title || n.label || id,
+        status: normalizeAdrStatus(n.status),
+        date: n.date || "unknown",
+      };
+    });
+    return Object.values(byId);
+  }
+
+  function App() {
+    const [settings, setSettingsRaw] = useState(loadSettings);
+    const setSettings = (next) => {
+      setSettingsRaw(next);
+      try { localStorage.setItem("blueprint.settings", JSON.stringify(next)); } catch (_) {}
+    };
+
+    // Overlay store: makes ADRs and containers editable while keeping
+    // data.jsx as the immutable seed.
+    const overlay = useOverlay();
+
+    const T = window.THEMES[settings.theme];
+    const blueprintName = (window.BLUEPRINT && window.BLUEPRINT.meta && window.BLUEPRINT.meta.project) || "default";
+    // These re-read from window.BLUEPRINT on every render — overlay updates the
+    // global so this stays in sync (and overlay.version forces re-render).
+    const projects   = (window.BLUEPRINT && window.BLUEPRINT.projects)   || [];
+    const adrs       = getBlueprintAdrs(window.BLUEPRINT);
+    const owners     = (window.BLUEPRINT && window.BLUEPRINT.owners)     || [];
+    const containers = (window.BLUEPRINT && window.BLUEPRINT.containers) || [];
+    const flows      = (window.BLUEPRINT && window.BLUEPRINT.flows)      || [];
+
+    // ── Notes state (persisted to localStorage by useNotes) ──
+    const { notes, addNote, updateNote, deleteNote, importNotes } = useNotes(blueprintName);
+
+    // Build notes-by-card index for the canvas pins
+    const notesByCard = useMemo(() => {
+      const m = {};
+      notes.forEach((n) => {
+        if (!m[n.cardId]) m[n.cardId] = [];
+        m[n.cardId].push(n);
+      });
+      return m;
+    }, [notes]);
+
+    // ── UI state ──
+    const [settingsOpen, setSettingsOpen] = useState(false);
+    const [notesPanelOpen, setNotesPanelOpen] = useState(false);
+    const [decisionsPanelOpen, setDecisionsPanelOpen] = useState(false);
+    const [adrModalFor, setAdrModalFor] = useState(null); // { adr, isNew }
+    const [containerModalFor, setContainerModalFor] = useState(null); // { container, isNew }
+    const [flowModalFor, setFlowModalFor] = useState(null); // { flow, isNew }
+    const [edgeModalFor, setEdgeModalFor] = useState(null); // { kind, edge, isNew, originalEdge, containerId }
+    const [connectMode, setConnectMode] = useState(null);   // null | { kind, sourceId } — Sprint 3.4c
+    const [flowsPanelOpen, setFlowsPanelOpen] = useState(false);
+    const [activeFlowId, setActiveFlowId] = useState(null);
+    const [editMode, setEditMode] = useState(false);
+    const [commentMode, setCommentMode] = useState(false);
+    const [popoverFor, setPopoverFor] = useState(null); // { cardId, cardLabel, project, anchorRect }
+
+    // Sync the global flag the canvas reads on mousedown.
+    useEffect(() => {
+      window.__BLUEPRINT_COMMENT_MODE = commentMode;
+      window.__BLUEPRINT_EDIT_MODE = editMode;
+    }, [commentMode, editMode]);
+
+    // Esc exits comment mode and closes panels/popovers.
+    useEffect(() => {
+      const onKey = (e) => {
+        if (e.key === "Escape") {
+          if (containerModalFor) setContainerModalFor(null);
+          else if (flowModalFor) setFlowModalFor(null);
+          else if (edgeModalFor) setEdgeModalFor(null);
+          else if (connectMode) setConnectMode(null);
+          else if (adrModalFor) setAdrModalFor(null);
+          else if (popoverFor) setPopoverFor(null);
+          else if (editMode) setEditMode(false);
+          else if (commentMode) setCommentMode(false);
+          else if (activeFlowId) setActiveFlowId(null);
+          else if (flowsPanelOpen) setFlowsPanelOpen(false);
+          else if (decisionsPanelOpen) setDecisionsPanelOpen(false);
+          else if (notesPanelOpen) setNotesPanelOpen(false);
+          else if (settingsOpen) setSettingsOpen(false);
+        }
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }, [commentMode, editMode, popoverFor, notesPanelOpen, settingsOpen, decisionsPanelOpen, adrModalFor, containerModalFor, flowsPanelOpen, activeFlowId, flowModalFor, edgeModalFor, connectMode]);
+
+    // Listen for card clicks dispatched from canvas. In edit mode, we open
+    // the container editor; otherwise we open the comment popover.
+    // When connect mode is active, the first click captures the source and
+    // the second click opens the new-edge modal with from/to prefilled.
+    useEffect(() => {
+      const handler = (e) => {
+        const { cardId, cardLabel, project, rect } = e.detail || {};
+        if (!cardId) return;
+        if (connectMode) {
+          if (!connectMode.sourceId) {
+            setConnectMode({ ...connectMode, sourceId: cardId });
+            return;
+          }
+          if (cardId === connectMode.sourceId) return; // ignore self
+          // Decide edge kind: both endpoints ctx.* → contextEdges; otherwise containerEdges.
+          // (componentEdges only ever come from explicit L3 entry — Sprint 3.4d.)
+          const isCtx = (id) => typeof id === "string" && id.startsWith("ctx.");
+          const kind = (isCtx(connectMode.sourceId) && isCtx(cardId)) ? "contextEdges" : "containerEdges";
+          openNewEdge(kind, connectMode.sourceId, cardId, null);
+          setConnectMode(null);
+          return;
+        }
+        if (editMode) {
+          const c = (window.BLUEPRINT.containers || []).find((x) => x.id === cardId);
+          if (c) setContainerModalFor({ container: c, isNew: false });
+          return;
+        }
+        setPopoverFor({ cardId, cardLabel, project, anchorRect: rect });
+      };
+      window.addEventListener("blueprint:card-click", handler);
+      return () => window.removeEventListener("blueprint:card-click", handler);
+    }, [editMode, connectMode, openNewEdge]);
+
+    // Listen for edge clicks dispatched from canvas (only fired in edit mode).
+    // Decide kind by looking up the edge in the seed/effective BP.
+    useEffect(() => {
+      const handler = (e) => {
+        const { edge } = e.detail || {};
+        if (!edge) return;
+        // Look up the live edge first (containerEdges or contextEdges).
+        const inContainer = (window.BLUEPRINT.containerEdges || [])
+          .find((x) => x.from === edge.from && x.to === edge.to);
+        if (inContainer) {
+          openEditEdge("containerEdges", inContainer, null);
+          return;
+        }
+        const inContext = (window.BLUEPRINT.contextEdges || [])
+          .find((x) => x.from === edge.from && x.to === edge.to);
+        if (inContext) {
+          openEditEdge("contextEdges", inContext, null);
+          return;
+        }
+        // Fallback: open with the dispatched payload as containerEdges.
+        openEditEdge("containerEdges", edge, null);
+      };
+      window.addEventListener("blueprint:edge-click", handler);
+      return () => window.removeEventListener("blueprint:edge-click", handler);
+    }, [openEditEdge]);
+
+    // Pin click → resolve current viewport rect from DOM (since cards have
+    // moved with pan/zoom) and open the popover for that card.
+    const onPinClick = useCallback(({ cardId, cardLabel, project }) => {
+      const el = document.querySelector(`[data-card-id="${cardId}"]`);
+      const rect = el ? el.getBoundingClientRect()
+                      : { left: 100, top: 100, right: 300, bottom: 200, width: 200, height: 100 };
+      setPopoverFor({ cardId, cardLabel, project, anchorRect: rect });
+    }, []);
+
+    // Card label resolver for notes panel (cards may have been removed from data.jsx,
+    // so we keep notes anchored even if their card is gone — show id as fallback).
+    const cardLabelFor = useCallback((cardId) => {
+      // Try L2/L3/L4 containers
+      const c = (window.BLUEPRINT.containers || []).find((x) => x.id === cardId);
+      if (c) return c.label;
+      // L1 project virtual id
+      if (cardId.startsWith("__project__")) {
+        const pid = cardId.slice("__project__".length);
+        const p = (window.BLUEPRINT.projects || []).find((x) => x.id === pid);
+        if (p) return p.label;
+      }
+      // L1 external virtual id
+      if (cardId.startsWith("__ext__")) {
+        const eid = cardId.slice("__ext__".length);
+        const ec = (window.BLUEPRINT.context || []).find((x) => x.id === eid);
+        if (ec) return ec.label;
+      }
+      return cardId;
+    }, []);
+
+    const onResetLayout = useCallback(() => {
+      if (typeof window.__BLUEPRINT_RESET_LAYOUT === "function") {
+        window.__BLUEPRINT_RESET_LAYOUT();
+      }
+    }, []);
+
+    // ── ADR open / create / save / delete ──
+    const openAdrById = useCallback((id) => {
+      const all = getBlueprintAdrs(window.BLUEPRINT);
+      // ids in card refs are like "adr.001"; old data may use "ADR-001"
+      let found = all.find((a) => a.id === id || a.label === id);
+      if (!found) {
+        // legacy lookup by label
+        const num = (id.match(/(\d+)/) || [])[1];
+        if (num) found = all.find((a) => (a.id || "").endsWith(num));
+      }
+      if (found) setAdrModalFor({ adr: found, isNew: false });
+    }, []);
+
+    const openNewAdr = useCallback(() => {
+      const newId = window.overlayHelpers.nextAdrId(window.BLUEPRINT.adrs || []);
+      setAdrModalFor({
+        adr: { id: newId, status: "proposed" },
+        isNew: true,
+      });
+    }, []);
+
+    const saveAdr = useCallback((draft) => {
+      overlay.upsertAdr(draft);
+      setAdrModalFor(null);
+    }, [overlay]);
+
+    const deleteAdrAndClose = useCallback((id) => {
+      overlay.deleteAdr(id);
+      setAdrModalFor(null);
+    }, [overlay]);
+
+    // ── Container open / create / save / delete ──
+    const openNewContainer = useCallback(() => {
+      const newId = window.overlayHelpers.nextContainerId(window.BLUEPRINT.containers || [], "newService");
+      setContainerModalFor({
+        container: {
+          id: newId,
+          label: "New container",
+          type: "service",
+          tech: "",
+          project: (projects[0] && projects[0].id) || "",
+          owner: "",
+          adrs: [],
+          x: 800, y: 300,
+        },
+        isNew: true,
+      });
+    }, [projects]);
+
+    const saveContainer = useCallback((draft) => {
+      overlay.upsertContainer(draft);
+      setContainerModalFor(null);
+    }, [overlay]);
+
+    const deleteContainerAndClose = useCallback((id) => {
+      overlay.deleteContainer(id);
+      setContainerModalFor(null);
+    }, [overlay]);
+
+    // ── Flow open / create / save / delete ──
+    const openFlowById = useCallback((id) => {
+      const all = (window.BLUEPRINT && window.BLUEPRINT.flows) || [];
+      const found = all.find((f) => f.id === id);
+      if (found) setFlowModalFor({ flow: found, isNew: false });
+    }, []);
+
+    const openNewFlow = useCallback(() => {
+      const newId = window.overlayHelpers.nextFlowId(window.BLUEPRINT.flows || [], "newFlow");
+      setFlowModalFor({
+        flow: {
+          id: newId,
+          name: "",
+          type: "technical",
+          criticality: "medium",
+          sync: false,
+          owners: [],
+          projects: [],
+          steps: [],
+        },
+        isNew: true,
+      });
+    }, []);
+
+    const saveFlow = useCallback((draft) => {
+      overlay.upsertFlow(draft);
+      setFlowModalFor(null);
+    }, [overlay]);
+
+    const deleteFlowAndClose = useCallback((id) => {
+      overlay.deleteFlow(id);
+      // If the deleted flow was the active highlighted one, clear it
+      setActiveFlowId((cur) => (cur === id ? null : cur));
+      setFlowModalFor(null);
+    }, [overlay]);
+
+    // ── Edge open / create / save / delete ──
+    // The connect-mode flow lands here once both endpoints are picked.
+    const openNewEdge = useCallback((kind, fromId, toId, containerId) => {
+      setEdgeModalFor({
+        kind,
+        edge: { from: fromId || "", to: toId || "", label: "", protocol: "" },
+        isNew: true,
+        originalEdge: null,
+        containerId: containerId || null,
+      });
+    }, []);
+
+    const openEditEdge = useCallback((kind, edge, containerId) => {
+      setEdgeModalFor({
+        kind,
+        edge: { ...edge },
+        isNew: false,
+        originalEdge: { ...edge },
+        containerId: containerId || null,
+      });
+    }, []);
+
+    const saveEdge = useCallback((draft, originalEdge) => {
+      const { kind, containerId, isNew } = edgeModalFor || {};
+      if (!kind) return;
+      // Strip empty fields so we don't write blank patches.
+      const clean = { from: draft.from, to: draft.to };
+      if (draft.label)    clean.label    = draft.label;
+      if (draft.protocol) clean.protocol = draft.protocol;
+      if (draft.kind)     clean.kind     = draft.kind;
+      if (isNew || !originalEdge) {
+        overlay.upsertEdge(kind, clean, containerId);
+      } else {
+        overlay.replaceEdge(kind, originalEdge, clean, containerId);
+      }
+      setEdgeModalFor(null);
+    }, [edgeModalFor, overlay]);
+
+    const deleteEdgeAndClose = useCallback((edge) => {
+      const { kind, containerId } = edgeModalFor || {};
+      if (!kind || !edge) return;
+      overlay.deleteEdge(kind, edge, containerId);
+      setEdgeModalFor(null);
+    }, [edgeModalFor, overlay]);
+
+    return (
+      <div data-screen-label="Blueprint canvas" style={{ position: "absolute", inset: 0 }}>
+        <BlueprintCanvas
+          themeKey={settings.theme}
+          levelOverride={settings.level}
+          showExternals={settings.showExternals}
+          onSelectLevel={(v) => setSettings({ ...settings, level: v })}
+          notesByCard={notesByCard}
+          onPinClick={onPinClick}
+          overlayVersion={overlay.version}
+          onAdrClick={openAdrById}
+          activeFlow={activeFlowId ? (flows.find((f) => f.id === activeFlowId) || null) : null}
+          flowAnimate={!!settings.flowAnimate}
+        />
+
+        {/* Comment mode banner */}
+        {commentMode && (
+          <CommentModeBanner T={T} onExit={() => setCommentMode(false)} />
+        )}
+
+        {/* Note popover (anchored to a card) */}
+        {popoverFor && (
+          <NotePopover
+            T={T}
+            anchorRect={popoverFor.anchorRect}
+            cardId={popoverFor.cardId}
+            cardLabel={popoverFor.cardLabel}
+            project={popoverFor.project}
+            notes={notes.filter((n) => n.cardId === popoverFor.cardId)}
+            onAdd={addNote}
+            onUpdate={updateNote}
+            onDelete={deleteNote}
+            onClose={() => setPopoverFor(null)}
+          />
+        )}
+
+        {/* Notes panel (right side) */}
+        {notesPanelOpen && (
+          <NotesPanel
+            T={T}
+            notes={notes}
+            blueprintName={blueprintName}
+            projects={projects}
+            cardLabelFor={cardLabelFor}
+            onUpdate={updateNote}
+            onDelete={deleteNote}
+            onImport={importNotes}
+            onClose={() => setNotesPanelOpen(false)}
+            onJumpToCard={(cardId) => {
+              const el = document.querySelector(`[data-card-id="${cardId}"]`);
+              if (el) {
+                const rect = el.getBoundingClientRect();
+                setPopoverFor({
+                  cardId,
+                  cardLabel: cardLabelFor(cardId),
+                  project: null,
+                  anchorRect: rect,
+                });
+              }
+            }}
+          />
+        )}
+
+        {/* Floating buttons (bottom-right): notes list, comment mode, settings */}
+        <NotesButton
+          T={T}
+          commentMode={commentMode}
+          onToggleCommentMode={() => {
+            setCommentMode((v) => !v);
+            setPopoverFor(null);
+          }}
+          openPanel={notesPanelOpen}
+          onOpenPanel={() => setNotesPanelOpen((v) => !v)}
+          badgeCount={notes.length}
+        />
+        <SettingsButton T={T} open={settingsOpen} onClick={() => setSettingsOpen((v) => !v)} />
+        {settingsOpen && (
+          <SettingsPanel
+            T={T}
+            settings={settings}
+            setSettings={setSettings}
+            onResetLayout={onResetLayout}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+
+        {/* Decisions (ADRs) */}
+        <DecisionsButton
+          T={T}
+          open={decisionsPanelOpen}
+          onClick={() => setDecisionsPanelOpen((v) => !v)}
+          badgeCount={adrs.length}
+        />
+        {decisionsPanelOpen && (
+          <DecisionsPanel
+            T={T}
+            adrs={adrs}
+            owners={owners}
+            projects={projects}
+            onOpen={(id) => openAdrById(id)}
+            onCreate={openNewAdr}
+            onClose={() => setDecisionsPanelOpen(false)}
+          />
+        )}
+
+        {/* Flows */}
+        <FlowsButton
+          T={T}
+          open={flowsPanelOpen}
+          onClick={() => setFlowsPanelOpen((v) => !v)}
+          badgeCount={flows.length}
+          activeFlowId={activeFlowId}
+        />
+        {flowsPanelOpen && (
+          <FlowsPanel
+            T={T}
+            flows={flows}
+            owners={owners}
+            projects={projects}
+            activeFlowId={activeFlowId}
+            onActivate={(id) => setActiveFlowId(id === activeFlowId ? null : id)}
+            onClear={() => setActiveFlowId(null)}
+            onOpen={openFlowById}
+            onCreate={openNewFlow}
+            onClose={() => setFlowsPanelOpen(false)}
+          />
+        )}
+        {adrModalFor && (
+          <AdrModal
+            T={T}
+            adr={adrModalFor.adr}
+            isNew={adrModalFor.isNew}
+            owners={owners}
+            projects={projects}
+            containers={containers.filter((c) => c.type !== "external")}
+            onSave={saveAdr}
+            onDelete={deleteAdrAndClose}
+            onClose={() => setAdrModalFor(null)}
+          />
+        )}
+
+        {/* Edit mode: floating button + banner + container modal */}
+        <EditButton T={T} active={editMode} onClick={() => {
+          setEditMode((v) => !v);
+          // Exit comment mode if active — they're mutually exclusive.
+          if (!editMode) {
+            setCommentMode(false);
+            setPopoverFor(null);
+          }
+        }} />
+        {editMode && (
+          <EditModeBanner
+            T={T}
+            onCreate={openNewContainer}
+            onExit={() => setEditMode(false)}
+            connectMode={connectMode}
+            onStartConnect={() => setConnectMode({ sourceId: null })}
+            onCancelConnect={() => setConnectMode(null)}
+          />
+        )}
+        {containerModalFor && (
+          <ContainerModal
+            T={T}
+            container={containerModalFor.container}
+            isNew={containerModalFor.isNew}
+            owners={owners}
+            projects={projects}
+            adrs={adrs}
+            onSave={saveContainer}
+            onDelete={deleteContainerAndClose}
+            onClose={() => setContainerModalFor(null)}
+          />
+        )}
+        {flowModalFor && (
+          <FlowModal
+            T={T}
+            flow={flowModalFor.flow}
+            isNew={flowModalFor.isNew}
+            owners={owners}
+            projects={projects}
+            containers={containers}
+            externals={(window.BLUEPRINT && window.BLUEPRINT.context) || []}
+            onSave={saveFlow}
+            onDelete={deleteFlowAndClose}
+            onClose={() => setFlowModalFor(null)}
+          />
+        )}
+        {edgeModalFor && (
+          <EdgeModal
+            T={T}
+            kind={edgeModalFor.kind}
+            edge={edgeModalFor.edge}
+            isNew={edgeModalFor.isNew}
+            originalEdge={edgeModalFor.originalEdge}
+            endpoints={(() => {
+              const k = edgeModalFor.kind;
+              if (k === "contextEdges") {
+                return ((window.BLUEPRINT && window.BLUEPRINT.context) || [])
+                  .map((c) => ({ id: c.id, label: `${c.label} (${c.type})` }));
+              }
+              if (k === "containerEdges") {
+                const ext = ((window.BLUEPRINT && window.BLUEPRINT.context) || [])
+                  .filter((c) => c.type === "actor" || c.type === "system")
+                  .map((c) => ({ id: c.id, label: `${c.label} (actor)` }));
+                const cont = ((window.BLUEPRINT && window.BLUEPRINT.containers) || [])
+                  .map((c) => ({ id: c.id, label: `${c.label} (${c.type})` }));
+                return [...ext, ...cont];
+              }
+              if (k === "componentEdges") {
+                const cid = edgeModalFor.containerId;
+                const list = ((window.BLUEPRINT && window.BLUEPRINT.components) || {})[cid] || [];
+                return list.map((c) => ({ id: c.id, label: `${c.label} (${c.type})` }));
+              }
+              return [];
+            })()}
+            onSave={saveEdge}
+            onDelete={deleteEdgeAndClose}
+            onClose={() => setEdgeModalFor(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
