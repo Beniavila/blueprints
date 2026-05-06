@@ -196,7 +196,7 @@ function DecisionsPanel({ T, adrs, owners, projects, onOpen, onClose, onCreate }
 }
 
 // ── Full-screen modal: edit one ADR ──
-function AdrModal({ T, adr, isNew, owners, projects, containers, onSave, onDelete, onClose }) {
+function AdrModal({ T, adr, isNew, owners, projects, containers, flows, onSave, onDelete, onClose }) {
   const { useState } = React;
   const [draft, setDraft] = useState(() => ({
     id: adr.id || "",
@@ -229,6 +229,10 @@ function AdrModal({ T, adr, isNew, owners, projects, containers, onSave, onDelet
   const toggleProject = (id) => {
     const cur = draft.affects.projects;
     setAffects("projects", cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+  };
+  const toggleFlow = (id) => {
+    const cur = draft.affects.flows;
+    setAffects("flows", cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   };
 
   const num = (draft.id.match(/(\d+)$/) || [])[1] || "";
@@ -383,6 +387,31 @@ function AdrModal({ T, adr, isNew, owners, projects, containers, onSave, onDelet
                 })}
               </div>
             </div>
+
+            {(flows || []).length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{
+                  fontSize: 11, color: T.ink, marginBottom: 6,
+                  display: "flex", alignItems: "center", gap: 8,
+                }}>
+                  <span style={{ fontWeight: 700 }}>Flows</span>
+                  <span style={{ color: T.inkDim, fontSize: 10 }}>
+                    {draft.affects.flows.length} of {(flows || []).length} selected
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {(flows || []).map((f) => {
+                    const on = draft.affects.flows.includes(f.id);
+                    return (
+                      <button key={f.id} onClick={() => toggleFlow(f.id)}
+                        style={chipStyle(T, on)}>
+                        {f.name || f.id}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Meta */}

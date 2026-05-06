@@ -10,3 +10,6 @@
 [branch "main"]
 	remote = origin
 	merge = refs/heads/main
+[branch "claude/review-blueprints-docs-IILSj"]
+	remote = origin
+	merge = refs/heads/claude/review-blueprints-docs-IILSj

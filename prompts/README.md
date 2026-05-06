@@ -18,7 +18,7 @@ El objetivo es que un LLM (cualquiera, también los más económicos) construya 
 | 2 | `02-containers.md`| `containers` (solo nodos, con tech y posición)          | Confirmas que están todos los servicios. |
 | 3 | `03-edges.md`     | `containerEdges`                                        | El LLM debe preguntar lo que no encuentre documentado. |
 | 4 | `04-components.md`| `components`, `componentEdges`, `endpoints`, `schemas`  | Solo para los containers que pidas. Es opcional. |
-| 5 | `05-adrs.md`      | `adrs` + nodos `type: "adr"` + edges `kind: "adr"`      | Asocias cada ADR a containers/projects. |
+| 5 | `05-adrs.md`      | `adrs[]` (lista global de decisiones) y `adrs: []` por container (badges) | Asocias cada ADR a containers/projects. |
 | 6 | `06-flows.md`     | `flows`                                                  | Steps validados contra ids ya existentes. |
 
 ## Por qué por capas

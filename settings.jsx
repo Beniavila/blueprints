@@ -33,7 +33,7 @@ function SettingsButton({ open, onClick, T }) {
   );
 }
 
-function SettingsPanel({ T, settings, setSettings, onResetLayout, onClose }) {
+function SettingsPanel({ T, settings, setSettings, onResetLayout, onExportOverlay, onImportOverlay, onClose }) {
   const fieldStyle = {
     display: "flex", flexDirection: "column", gap: 6,
     fontSize: 11, color: T.inkDim, letterSpacing: ".05em", textTransform: "uppercase",
@@ -189,6 +189,64 @@ function SettingsPanel({ T, settings, setSettings, onResetLayout, onClose }) {
             textTransform: "uppercase",
           }}>Reset layout</button>
       </div>
+
+      {(onExportOverlay || onImportOverlay) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${T.cardBorder}`, paddingTop: 12 }}>
+          <div style={{ fontSize: 10, letterSpacing: ".15em", textTransform: "uppercase", color: T.inkDim }}>
+            Overlay (edits)
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={() => {
+                const json = onExportOverlay();
+                const blob = new Blob([json], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "blueprint-overlay.json";
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}
+              style={{
+                flex: 1, padding: "8px 12px",
+                background: "transparent", color: T.ink,
+                border: `1px solid ${T.cardBorder}`, borderRadius: 4,
+                cursor: "pointer", fontSize: 11,
+                fontFamily: T.fontStack, letterSpacing: ".05em", textTransform: "uppercase",
+              }}>Export</button>
+            <button
+              onClick={() => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "application/json";
+                input.onchange = (ev) => {
+                  const f = ev.target.files[0];
+                  if (!f) return;
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    try {
+                      if (window.confirm("Replace current overlay with this file? All visual edits will be overwritten.")) {
+                        const result = onImportOverlay(e.target.result);
+                        if (!result || !result.ok) window.alert("Import failed: " + ((result && result.error) || "unknown error"));
+                      }
+                    } catch (err) {
+                      window.alert("Could not read file: " + err.message);
+                    }
+                  };
+                  reader.readAsText(f);
+                };
+                input.click();
+              }}
+              style={{
+                flex: 1, padding: "8px 12px",
+                background: "transparent", color: T.ink,
+                border: `1px solid ${T.cardBorder}`, borderRadius: 4,
+                cursor: "pointer", fontSize: 11,
+                fontFamily: T.fontStack, letterSpacing: ".05em", textTransform: "uppercase",
+              }}>Import</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ fontSize: 10, color: T.inkDim, lineHeight: 1.45 }}>
         Settings persist in your browser.

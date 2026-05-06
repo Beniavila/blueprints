@@ -1,1 +1,3 @@
 0000000000000000000000000000000000000000 19cb2cab5788e855d6072c427e9b31ac8a97d414 beniavila <bavila@salvi.es> 1778067935 +0200	commit (initial): Initial blueprints project
+19cb2cab5788e855d6072c427e9b31ac8a97d414 1ad43b17190a4d1a0c2d04a54c74cf6be80a2b98 beniavila <bavila@salvi.es> 1778074229 +0200	checkout: moving from main to claude/review-blueprints-docs-IILSj
+1ad43b17190a4d1a0c2d04a54c74cf6be80a2b98 f83abe4adb05980fdcc7c25215a247789a818f6a beniavila <bavila@salvi.es> 1778075270 +0200	commit: Add root gitignore

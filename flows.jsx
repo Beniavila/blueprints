@@ -1,12 +1,13 @@
-// flows.jsx — Flow panel + flow list + criticality badges.
+// flows.jsx — Flow panel, flow list, criticality badges, and FlowModal CRUD.
 //
 // Flows are ordered sequences of interactions across containers. They are the
 // architectural-reasoning lens on top of the container graph: instead of
 // asking "what services exist", you ask "what happens when a sensor publishes
 // a sample / when an operator clicks a button / when an alert fires".
 //
-// Sprint 3.1 ships the panel + button + read-only viewer. Sprint 3.2 adds
-// the canvas highlight; 3.3 adds the modal CRUD.
+// An active flow dims non-participating cards, highlights participating ones,
+// and draws numbered step paths in a separate SVG layer above all cards so
+// paths remain visible when crossing intermediate nodes.
 
 const CRIT_LEVELS = ["critical", "high", "medium", "low"];
 const CRIT_COLORS = {

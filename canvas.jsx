@@ -4,10 +4,10 @@ window.__BLUEPRINT_COMMENT_MODE = window.__BLUEPRINT_COMMENT_MODE || false;
 
 // Pan/zoom canvas with semantic C4 levels.
 // Zoom thresholds map to C4 levels:
-//   < 0.25  → Context
-//   0.25–0.6 → Container
-//   0.6–1.4  → Component
-//   ≥ 1.4    → Code
+//   < 0.30   → Context
+//   0.30–0.70 → Container
+//   0.70–1.50 → Component
+//   ≥ 1.50   → Code
 //
 // Card density swaps based on the active level.
 
@@ -1522,7 +1522,6 @@ function Legend({ T }) {
     { key: "database", label: "database" },
     { key: "cache", label: "cache" },
     { key: "frontend", label: "frontend" },
-    { key: "adr", label: "ADR" },
   ];
   return (
     <div style={{
@@ -1544,93 +1543,6 @@ function Legend({ T }) {
           <span style={{ color: T.ink }}>{i.label}</span>
         </div>
       ))}
-    </div>
-  );
-}
-
-// Right-edge interactive ladder. Doubles as the level selector — click any rung
-// to lock that level, click "Auto" to hand control back to the zoom.
-function C4Ladder({ T, level, levelOverride, onSelectLevel }) {
-  const labels = [
-    { key: "context",   n: "L1", t: "Context",   d: "System & actors" },
-    { key: "container", n: "L2", t: "Container", d: "Deployable units" },
-    { key: "component", n: "L3", t: "Component", d: "Internals & ADRs" },
-    { key: "code",      n: "L4", t: "Code",      d: "Endpoints & schemas" },
-  ];
-  const isAuto = levelOverride === "auto";
-
-  return (
-    <div style={{
-      position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)",
-      display: "flex", flexDirection: "column", gap: 6,
-      fontFamily: T.fontStack,
-      background: T.cardBg, border: `1px solid ${T.cardBorder}`,
-      borderRadius: 6, padding: "10px 10px 10px 10px",
-      boxShadow: "0 8px 32px rgba(0,0,0,.25)",
-      minWidth: 188,
-    }}>
-      <div style={{
-        fontSize: 9.5, letterSpacing: ".22em", textTransform: "uppercase",
-        color: T.inkDim, padding: "0 4px 4px",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-      }}>
-        <span>C4 · Detail</span>
-        <button
-          onClick={() => onSelectLevel("auto")}
-          title="Track the zoom level"
-          style={{
-            border: `1px solid ${isAuto ? T.accent : T.cardBorder}`,
-            background: isAuto ? T.cardBg : "transparent",
-            color: isAuto ? T.accent : T.inkDim,
-            fontFamily: T.fontStack, fontSize: 9,
-            letterSpacing: ".15em", textTransform: "uppercase",
-            padding: "2px 7px", borderRadius: 3, cursor: "pointer",
-          }}>{isAuto ? "● auto" : "auto"}</button>
-      </div>
-      {labels.map((l) => {
-        const active = l.key === level;
-        const locked = !isAuto && l.key === levelOverride;
-        return (
-          <button
-            key={l.key}
-            onClick={() => onSelectLevel(l.key)}
-            style={{
-              display: "flex", alignItems: "center", gap: 10,
-              opacity: active ? 1 : 0.55,
-              border: `1px solid ${active ? T.accent : "transparent"}`,
-              background: active ? T.cardBg : "transparent",
-              borderRadius: 4, padding: "6px 8px",
-              cursor: "pointer", textAlign: "left",
-              fontFamily: T.fontStack, color: T.ink,
-              transition: "opacity .15s, border-color .15s",
-            }}>
-            <div style={{
-              width: 26, height: 26, display: "grid", placeItems: "center",
-              border: `1px solid ${active ? T.accent : T.cardBorder}`,
-              borderRadius: 3, fontSize: 9.5, color: active ? T.accent : T.inkDim,
-              background: active ? T.bg : "transparent",
-              letterSpacing: ".05em", flexShrink: 0,
-              fontWeight: 600,
-            }}>{l.n}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 1, flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: 10.5, color: active ? T.ink : T.inkDim,
-                letterSpacing: ".15em", textTransform: "uppercase",
-                display: "flex", alignItems: "center", gap: 6,
-              }}>
-                {l.t}
-                {locked && <span style={{
-                  fontSize: 8, color: T.accent, letterSpacing: ".1em",
-                }}>● locked</span>}
-              </div>
-              <div style={{
-                fontSize: 9.5, color: T.inkDim, letterSpacing: ".02em",
-                textTransform: "none",
-              }}>{l.d}</div>
-            </div>
-          </button>
-        );
-      })}
     </div>
   );
 }

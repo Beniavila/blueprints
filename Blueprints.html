@@ -482,6 +482,8 @@
             settings={settings}
             setSettings={setSettings}
             onResetLayout={onResetLayout}
+            onExportOverlay={overlay.exportOverlay}
+            onImportOverlay={overlay.importOverlay}
             onClose={() => setSettingsOpen(false)}
           />
         )}
@@ -535,6 +537,7 @@
             owners={owners}
             projects={projects}
             containers={containers.filter((c) => c.type !== "external")}
+            flows={flows}
             onSave={saveAdr}
             onDelete={deleteAdrAndClose}
             onClose={() => setAdrModalFor(null)}

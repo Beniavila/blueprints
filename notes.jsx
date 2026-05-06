@@ -7,12 +7,13 @@
 //     __ext__ virtual id for L1).
 //   - status: "todo" | "doing" | "done"
 //
-// Three pieces:
-//   <NotesButton>  — floating toggle (bottom-right, next to settings)
-//   <NotesPanel>   — slide-in list with filters, status toggles, export
-//   <NotePin>      — per-card badge that shows note count + opens a popover
-//   <NoteOverlay>  — covers the canvas while in "comment mode" so clicks on
-//                    cards create notes instead of dragging.
+// Components exposed on window:
+//   useNotes           — hook: load/save/CRUD notes from localStorage
+//   <NotesButton>      — two floating buttons: comment mode toggle + panel toggle
+//   <CommentModeBanner>— top banner shown while comment mode is active
+//   <NotePin>          — per-card badge (count bubble) that opens the popover
+//   <NotePopover>      — card-anchored popover to add/view/status notes
+//   <NotesPanel>       — full side panel: list, filters, export/import JSON
 
 const { useState: useNotesState, useMemo: useNotesMemo, useEffect: useNotesEffect } = React;
 
