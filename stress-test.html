@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IoT Stress Test — Visual Monitor</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #04060f;
+      color: #d0d8f0;
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ── Header ── */
+    .header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 58px;
+      background: rgba(8, 12, 24, 0.97);
+      border-bottom: 1px solid rgba(79,195,247,0.18);
+      display: flex;
+      align-items: center;
+      padding: 0 28px;
+      z-index: 200;
+      backdrop-filter: blur(12px);
+      gap: 0;
+    }
+
+    .header-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #4FC3F7;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+    }
+
+    .header-title .pulse-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #4FC3F7;
+      box-shadow: 0 0 0 0 rgba(79,195,247,0.6);
+      animation: pulse-glow 2s infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%   { box-shadow: 0 0 0 0 rgba(79,195,247,0.6); }
+      70%  { box-shadow: 0 0 0 8px rgba(79,195,247,0); }
+      100% { box-shadow: 0 0 0 0 rgba(79,195,247,0); }
+    }
+
+    .header-divider {
+      width: 1px; height: 32px;
+      background: rgba(255,255,255,0.08);
+      margin: 0 28px;
+      flex-shrink: 0;
+    }
+
+    .header-stats {
+      display: flex;
+      gap: 32px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .stat-item { display: flex; flex-direction: column; gap: 1px; }
+
+    .stat-label {
+      font-size: 9px;
+      color: rgba(208,216,240,0.4);
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      white-space: nowrap;
+    }
+
+    .stat-value {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.2;
+      transition: color 0.6s;
+    }
+
+    .stat-unit { font-size: 10px; opacity: 0.55; margin-left: 3px; }
+
+    .btn-add-org {
+      margin-left: auto;
+      flex-shrink: 0;
+      background: rgba(79,195,247,0.12);
+      border: 1px solid rgba(79,195,247,0.35);
+      color: #4FC3F7;
+      padding: 8px 22px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-add-org:hover {
+      background: rgba(79,195,247,0.22);
+      border-color: #4FC3F7;
+      box-shadow: 0 0 24px rgba(79,195,247,0.28);
+    }
+
+    /* ── Canvas overlay ── */
+    #particle-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      position: fixed;
+      top: 58px; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    /* ── Orgs panel ── */
+    .orgs-panel {
+      flex: 1;
+      padding: 20px 16px 20px 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .orgs-panel::-webkit-scrollbar { width: 4px; }
+    .orgs-panel::-webkit-scrollbar-track { background: transparent; }
+    .orgs-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      opacity: 0.3;
+      text-align: center;
+    }
+
+    .empty-state svg { opacity: 0.5; }
+
+    .empty-state-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .empty-state-sub {
+      font-size: 11px;
+      opacity: 0.7;
+      line-height: 1.6;
+    }
+
+    /* ── Org cluster ── */
+    .org-cluster {
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: rgba(10,14,28,0.7);
+      backdrop-filter: blur(6px);
+      transition: border-color 0.3s;
+    }
+
+    .org-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .org-color-bar {
+      width: 3px;
+      height: 28px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .org-info { flex: 1; }
+
+    .org-name {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .org-sub {
+      font-size: 9px;
+      opacity: 0.45;
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    .org-rate-badge {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid;
+    }
+
+    .gateways-list { display: flex; flex-direction: column; gap: 8px; }
+
+    /* ── Gateway card ── */
+    .gateway-card {
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 9px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    .gateway-card:hover {
+      background: rgba(255,255,255,0.04);
+    }
+
+    .gw-hex {
+      width: 36px; height: 36px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 9px;
+      font-size: 16px;
+      position: relative;
+    }
+
+    .gw-info { flex: 1; min-width: 0; }
+
+    .gw-name { font-size: 11px; font-weight: 700; }
+
+    .gw-meta {
+      font-size: 9px;
+      opacity: 0.45;
+      margin-top: 3px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .gw-meta-tag {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Node dots */
+    .node-dots {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      margin-top: 5px;
+      max-width: 120px;
+    }
+
+    .node-dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      opacity: 0.6;
+    }
+
+    .gw-right { text-align: right; flex-shrink: 0; }
+
+    .gw-rate { font-size: 16px; font-weight: 700; line-height: 1; }
+    .gw-rate-label { font-size: 9px; opacity: 0.4; margin-top: 2px; }
+
+    .gw-bar-wrap {
+      width: 60px;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      margin-top: 5px;
+      overflow: hidden;
+    }
+
+    .gw-bar { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+
+    /* ── Logic panel ── */
+    .logic-panel {
+      width: 300px;
+      flex-shrink: 0;
+      background: rgba(6, 9, 20, 0.95);
+      border-left: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      gap: 0;
+      overflow-y: auto;
+    }
+
+    .logic-panel::-webkit-scrollbar { width: 4px; }
+    .logic-panel::-webkit-scrollbar-track { background: transparent; }
+    .logic-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+    /* ── Logic card ── */
+    .logic-card {
+      border-radius: 14px;
+      padding: 22px;
+      border: 1px solid;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.6s, box-shadow 0.6s;
+    }
+
+    .logic-card-glow {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 14px;
+      pointer-events: none;
+      transition: background 0.6s;
+    }
+
+    .logic-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .logic-label {
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      opacity: 0.45;
+    }
+
+    .logic-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .logic-status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      border: 1px solid;
+      white-space: nowrap;
+    }
+
+    .badge-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+
+    .logic-big-metric {
+      margin-bottom: 18px;
+    }
+
+    .metric-label {
+      font-size: 9px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      opacity: 0.45;
+      margin-bottom: 5px;
+    }
+
+    .metric-row {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+    }
+
+    .metric-big {
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 1;
+      transition: color 0.6s;
+    }
+
+    .metric-unit {
+      font-size: 12px;
+      opacity: 0.55;
+    }
+
+    .metric-bar-track {
+      height: 5px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .metric-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.8s ease, background 0.6s;
+    }
+
+    .logic-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 16px 0;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .mini-metric-label {
+      font-size: 9px;
+      opacity: 0.4;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .mini-metric-value {
+      font-size: 15px;
+      font-weight: 700;
+      margin-top: 3px;
+      transition: color 0.6s;
+    }
+
+    /* History sparkline */
+    .sparkline-wrap {
+      margin-top: 18px;
+    }
+
+    .sparkline-label {
+      font-size: 9px;
+      opacity: 0.4;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    .sparkline-svg {
+      width: 100%;
+      height: 40px;
+    }
+
+    /* ── Org count pills ── */
+    .logic-orgs-section {
+      margin-top: 16px;
+    }
+
+    .logic-orgs-title {
+      font-size: 9px;
+      opacity: 0.4;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .org-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .org-pill:last-child { border-bottom: none; }
+
+    .org-pill-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .org-pill-name { font-size: 10px; flex: 1; opacity: 0.8; }
+
+    .org-pill-rate { font-size: 10px; font-weight: 700; opacity: 0.9; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4,6,15,0.88);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      backdrop-filter: blur(6px);
+    }
+
+    .modal {
+      background: #080c1a;
+      border: 1px solid rgba(79,195,247,0.25);
+      border-radius: 16px;
+      padding: 32px;
+      width: 500px;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 0 80px rgba(79,195,247,0.1), 0 40px 60px rgba(0,0,0,0.6);
+    }
+
+    .modal::-webkit-scrollbar { width: 4px; }
+    .modal::-webkit-scrollbar-track { background: transparent; }
+    .modal::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+    .modal-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #4FC3F7;
+      letter-spacing: 1px;
+      margin-bottom: 26px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .color-preview {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+    }
+
+    .form-group { margin-bottom: 18px; }
+
+    .form-label {
+      display: block;
+      font-size: 9px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      opacity: 0.55;
+      margin-bottom: 8px;
+    }
+
+    .form-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: #d0d8f0;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: rgba(79,195,247,0.45);
+      box-shadow: 0 0 0 3px rgba(79,195,247,0.08);
+    }
+
+    select.form-input option { background: #080c1a; }
+
+    .gw-builder {
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 18px;
+    }
+
+    .gw-builder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .gw-builder-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      opacity: 0.6;
+    }
+
+    .btn-add-gw {
+      background: none;
+      border: 1px dashed rgba(255,255,255,0.18);
+      color: rgba(208,216,240,0.5);
+      padding: 4px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 10px;
+      transition: all 0.2s;
+    }
+
+    .btn-add-gw:hover {
+      border-color: rgba(79,195,247,0.4);
+      color: #4FC3F7;
+    }
+
+    .gw-entry {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+
+    .btn-remove {
+      background: none;
+      border: none;
+      color: rgba(244,67,54,0.4);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 8px 6px;
+      border-radius: 6px;
+      transition: color 0.2s;
+      line-height: 1;
+    }
+
+    .btn-remove:hover:not(:disabled) { color: #F44336; }
+    .btn-remove:disabled { opacity: 0.2; cursor: default; }
+
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .btn-cancel {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(208,216,240,0.55);
+      padding: 10px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+
+    .btn-cancel:hover { border-color: rgba(255,255,255,0.3); color: #d0d8f0; }
+
+    .btn-create {
+      background: rgba(79,195,247,0.18);
+      border: 1px solid rgba(79,195,247,0.45);
+      color: #4FC3F7;
+      padding: 10px 28px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+    }
+
+    .btn-create:hover:not(:disabled) {
+      background: rgba(79,195,247,0.28);
+      box-shadow: 0 0 24px rgba(79,195,247,0.3);
+    }
+
+    .btn-create:disabled { opacity: 0.35; cursor: default; }
+
+    /* ── Animations ── */
+    @keyframes critical-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-3px); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <canvas id="particle-canvas"></canvas>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+    // ── Constants ──────────────────────────────────────────────────────────────
+
+    const ORG_COLORS = [
+      '#4FC3F7', '#81C784', '#FFB74D', '#F06292',
+      '#CE93D8', '#4DD0E1', '#FF8A65', '#AED581',
+    ];
+
+    const TIMEZONES = [
+      'UTC-12','UTC-11','UTC-10','UTC-9','UTC-8','UTC-7','UTC-6','UTC-5',
+      'UTC-4','UTC-3','UTC-2','UTC-1','UTC+0','UTC+1','UTC+2','UTC+3',
+      'UTC+4','UTC+5','UTC+5:30','UTC+6','UTC+7','UTC+8','UTC+9','UTC+10',
+      'UTC+11','UTC+12',
+    ];
+
+    const STATUS = {
+      healthy:  { color: '#00E676', label: 'Healthy',   bg: 'rgba(0,230,118,0.08)',  border: 'rgba(0,230,118,0.3)'  },
+      warning:  { color: '#FFCA28', label: 'Warning',   bg: 'rgba(255,202,40,0.08)', border: 'rgba(255,202,40,0.3)' },
+      degraded: { color: '#FF7043', label: 'Degraded',  bg: 'rgba(255,112,67,0.08)', border: 'rgba(255,112,67,0.3)' },
+      critical: { color: '#F44336', label: 'Critical',  bg: 'rgba(244,67,54,0.08)',  border: 'rgba(244,67,54,0.3)'  },
+    };
+
+    // ── Simulation ─────────────────────────────────────────────────────────────
+
+    function computeGatewayRate(gw) {
+      // Each node: 2–5 msgs/sec depending on "zone activity" simulation
+      const baseRate = gw.nodeCount * (2.8 + Math.sin(Date.now() / 5000 + gw._seed) * 1.1);
+      return Math.max(0, Math.round(baseRate + (Math.random() - 0.5) * gw.nodeCount * 0.3));
+    }
+
+    function computeLogicMetrics(orgs) {
+      const totalMsgsPerSec = orgs.reduce((s, o) =>
+        s + o.gateways.reduce((ss, gw) => ss + (gw.rate || 0), 0), 0);
+
+      const load = totalMsgsPerSec / 800; // normalized 0–1+ (overload > 1)
+
+      const avgLatency = Math.round(
+        6 + load * load * 420 + Math.random() * (4 + load * 20)
+      );
+
+      const cpuLoad  = Math.min(99, Math.round(load * 88 + Math.random() * 3));
+      const dbWrite  = Math.round(1.5 + load * 55 + Math.random() * 3);
+      const queue    = Math.max(0, Math.round((load - 0.4) * load * 2800));
+      const dropped  = Math.max(0, Math.round((load - 0.9) * load * totalMsgsPerSec * 0.08));
+
+      let status = 'healthy';
+      if      (avgLatency > 600) status = 'critical';
+      else if (avgLatency > 280) status = 'degraded';
+      else if (avgLatency > 110) status = 'warning';
+
+      return { totalMsgsPerSec, avgLatency, cpuLoad, dbWrite, queue, dropped, status };
+    }
+
+    // ── Bezier helpers ─────────────────────────────────────────────────────────
+
+    function bez(t, p0, p1, p2, p3) {
+      const u = 1 - t;
+      return u*u*u*p0 + 3*u*u*t*p1 + 3*u*t*t*p2 + t*t*t*p3;
+    }
+
+    // ── Components ─────────────────────────────────────────────────────────────
+
+    function AddOrgModal({ onClose, onAdd, nextColor }) {
+      const [name, setName] = useState('');
+      const [gateways, setGateways] = useState([{ nodes: 50, tz: 'UTC+0' }]);
+
+      const addGw   = () => setGateways(g => [...g, { nodes: 25, tz: 'UTC+0' }]);
+      const removeGw = i => setGateways(g => g.filter((_, idx) => idx !== i));
+      const updateGw = (i, f, v) => setGateways(g =>
+        g.map((gw, idx) => idx === i ? { ...gw, [f]: v } : gw)
+      );
+
+      const handleCreate = () => {
+        if (!name.trim()) return;
+        onAdd({
+          id:    `org-${Date.now()}`,
+          name:  name.trim(),
+          color: nextColor,
+          gateways: gateways.map((gw, i) => ({
+            id:        `gw-${Date.now()}-${i}`,
+            nodeCount: Math.max(1, parseInt(gw.nodes) || 10),
+            timezone:  gw.tz,
+            rate:      0,
+            _seed:     Math.random() * 100,
+          })),
+        });
+        onClose();
+      };
+
+      return (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+          <div className="modal">
+            <div className="modal-title">
+              <div className="color-preview" style={{ background: nextColor, boxShadow: `0 0 10px ${nextColor}` }} />
+              New Organization
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Organization name</label>
+              <input
+                className="form-input"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Acme IoT Corp"
+                autoFocus
+                onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              />
+            </div>
+
+            <div className="gw-builder">
+              <div className="gw-builder-header">
+                <span className="gw-builder-title">Gateways ({gateways.length})</span>
+                <button className="btn-add-gw" onClick={addGw}>+ Add gateway</button>
+              </div>
+              {gateways.map((gw, i) => (
+                <div className="gw-entry" key={i}>
+                  <div>
+                    <label className="form-label">Nodes</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="1"
+                      max="50000"
+                      value={gw.nodes}
+                      onChange={e => updateGw(i, 'nodes', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Timezone</label>
+                    <select
+                      className="form-input"
+                      value={gw.tz}
+                      onChange={e => updateGw(i, 'tz', e.target.value)}
+                    >
+                      {TIMEZONES.map(tz => (
+                        <option key={tz} value={tz}>{tz}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    className="btn-remove"
+                    onClick={() => removeGw(i)}
+                    disabled={gateways.length === 1}
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn-cancel" onClick={onClose}>Cancel</button>
+              <button className="btn-create" onClick={handleCreate} disabled={!name.trim()}>
+                Create Organization
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function GatewayCard({ gateway, color, cardRef }) {
+      const rate    = gateway.rate || 0;
+      const maxRate = gateway.nodeCount * 5;
+      const pct     = Math.min(100, (rate / maxRate) * 100);
+
+      // Show up to 30 node dots
+      const dotsCount = Math.min(30, gateway.nodeCount);
+
+      return (
+        <div className="gateway-card" ref={cardRef}>
+          <div className="gw-hex" style={{ background: color + '18' }}>
+            <svg width="20" height="22" viewBox="0 0 20 22" fill="none">
+              <path d="M10 1L19 6V16L10 21L1 16V6L10 1Z"
+                stroke={color} strokeWidth="1.5" fill={color + '22'} />
+            </svg>
+          </div>
+          <div className="gw-info">
+            <div className="gw-name" style={{ color }}>{gateway.id.slice(-6).toUpperCase()}</div>
+            <div className="gw-meta">
+              <span className="gw-meta-tag">⬡ {gateway.nodeCount.toLocaleString()} nodes</span>
+              <span className="gw-meta-tag">🕐 {gateway.timezone}</span>
+            </div>
+            <div className="node-dots">
+              {Array.from({ length: dotsCount }).map((_, i) => (
+                <div
+                  key={i}
+                  className="node-dot"
+                  style={{
+                    background: color,
+                    opacity: i < Math.round(dotsCount * pct / 100) ? 0.7 : 0.15,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="gw-right">
+            <div className="gw-rate" style={{ color }}>{rate.toLocaleString()}</div>
+            <div className="gw-rate-label">msg/s</div>
+            <div className="gw-bar-wrap">
+              <div className="gw-bar" style={{ width: `${pct}%`, background: color }} />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function OrgCluster({ org, gwRefs }) {
+      const total = org.gateways.reduce((s, gw) => s + (gw.rate || 0), 0);
+      const cfg   = STATUS.healthy;
+
+      return (
+        <div className="org-cluster" style={{ borderColor: org.color + '28' }}>
+          <div className="org-header">
+            <div className="org-color-bar" style={{
+              background: `linear-gradient(to bottom, ${org.color}, ${org.color}44)`,
+              boxShadow: `0 0 8px ${org.color}44`,
+            }} />
+            <div className="org-info">
+              <div className="org-name" style={{ color: org.color }}>{org.name}</div>
+              <div className="org-sub">
+                {org.gateways.length} gateway{org.gateways.length !== 1 ? 's' : ''} ·{' '}
+                {org.gateways.reduce((s, g) => s + g.nodeCount, 0).toLocaleString()} nodes total
+              </div>
+            </div>
+            <div className="org-rate-badge" style={{
+              color: org.color,
+              borderColor: org.color + '44',
+              background: org.color + '12',
+            }}>
+              {total.toLocaleString()} msg/s
+            </div>
+          </div>
+          <div className="gateways-list">
+            {org.gateways.map(gw => {
+              if (!gwRefs.current[gw.id]) gwRefs.current[gw.id] = React.createRef();
+              return (
+                <GatewayCard
+                  key={gw.id}
+                  gateway={gw}
+                  color={org.color}
+                  cardRef={gwRefs.current[gw.id]}
+                />
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    function Sparkline({ history, color }) {
+      if (!history || history.length < 2) return null;
+      const max  = Math.max(...history, 1);
+      const w    = 256; const h = 40;
+      const step = w / (history.length - 1);
+      const pts  = history.map((v, i) => `${i * step},${h - (v / max) * (h - 4)}`).join(' ');
+
+      return (
+        <svg className="sparkline-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polyline
+            points={pts}
+            fill="none"
+            stroke={color}
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          <polygon
+            points={`0,${h} ${pts} ${(history.length-1)*step},${h}`}
+            fill="url(#spark-grad)"
+          />
+        </svg>
+      );
+    }
+
+    function LogicCard({ metrics, logicRef, orgs, history }) {
+      const cfg     = STATUS[metrics.status] || STATUS.healthy;
+      const latPct  = Math.min(100, (metrics.avgLatency / 1200) * 100);
+      const isCrit  = metrics.status === 'critical';
+
+      return (
+        <div
+          ref={logicRef}
+          className="logic-card"
+          style={{
+            background: 'rgba(8,12,24,0.97)',
+            borderColor: cfg.border,
+            boxShadow: `0 0 60px ${cfg.color}18, 0 0 120px ${cfg.color}09`,
+          }}
+        >
+          {/* subtle inner glow */}
+          <div className="logic-card-glow" style={{
+            background: `radial-gradient(ellipse at 50% 0%, ${cfg.color}08 0%, transparent 70%)`,
+          }} />
+
+          <div className="logic-header">
+            <div>
+              <div className="logic-label">Processing Engine</div>
+              <div className="logic-name">Logic Core</div>
+            </div>
+            <div
+              className="logic-status-badge"
+              style={{
+                color: cfg.color,
+                borderColor: cfg.border,
+                background: cfg.bg,
+                animation: isCrit ? 'critical-pulse 1s ease-in-out infinite' : 'none',
+              }}
+            >
+              <div className="badge-dot" style={{
+                background: cfg.color,
+                boxShadow: `0 0 6px ${cfg.color}`,
+              }} />
+              {cfg.label}
+            </div>
+          </div>
+
+          {/* Throughput */}
+          <div className="logic-big-metric">
+            <div className="metric-label">Throughput</div>
+            <div className="metric-row">
+              <span className="metric-big" style={{ color: cfg.color }}>
+                {metrics.totalMsgsPerSec.toLocaleString()}
+              </span>
+              <span className="metric-unit">msg/s</span>
+            </div>
+            <div className="metric-bar-track">
+              <div className="metric-bar-fill" style={{
+                width: `${Math.min(100, metrics.totalMsgsPerSec / 8)}%`,
+                background: cfg.color,
+              }} />
+            </div>
+          </div>
+
+          {/* Latency */}
+          <div className="logic-big-metric">
+            <div className="metric-label">Avg Response Time</div>
+            <div className="metric-row">
+              <span className="metric-big" style={{ color: cfg.color }}>
+                {metrics.avgLatency}
+              </span>
+              <span className="metric-unit">ms</span>
+            </div>
+            <div className="metric-bar-track">
+              <div className="metric-bar-fill" style={{
+                width: `${latPct}%`,
+                background: cfg.color,
+              }} />
+            </div>
+          </div>
+
+          {/* CPU */}
+          <div className="logic-big-metric">
+            <div className="metric-label">CPU Load</div>
+            <div className="metric-row">
+              <span className="metric-big" style={{ color: cfg.color }}>
+                {metrics.cpuLoad}
+              </span>
+              <span className="metric-unit">%</span>
+            </div>
+            <div className="metric-bar-track">
+              <div className="metric-bar-fill" style={{
+                width: `${metrics.cpuLoad}%`,
+                background: cfg.color,
+              }} />
+            </div>
+          </div>
+
+          <div className="logic-divider" />
+
+          <div className="mini-grid">
+            <div>
+              <div className="mini-metric-label">DB write</div>
+              <div className="mini-metric-value" style={{ color: metrics.dbWrite > 30 ? STATUS.warning.color : 'inherit' }}>
+                {metrics.dbWrite}ms
+              </div>
+            </div>
+            <div>
+              <div className="mini-metric-label">Queue</div>
+              <div className="mini-metric-value" style={{ color: metrics.queue > 500 ? STATUS.degraded.color : 'inherit' }}>
+                {metrics.queue.toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="mini-metric-label">Dropped</div>
+              <div className="mini-metric-value" style={{ color: metrics.dropped > 0 ? STATUS.critical.color : 'inherit' }}>
+                {metrics.dropped > 0 ? metrics.dropped.toLocaleString() : '—'}
+              </div>
+            </div>
+            <div>
+              <div className="mini-metric-label">Gateways</div>
+              <div className="mini-metric-value">
+                {orgs.reduce((s, o) => s + o.gateways.length, 0)}
+              </div>
+            </div>
+          </div>
+
+          {/* Sparkline */}
+          {history.length > 2 && (
+            <div className="sparkline-wrap">
+              <div className="sparkline-label">Throughput history (60s)</div>
+              <Sparkline history={history} color={cfg.color} />
+            </div>
+          )}
+
+          {/* Per-org breakdown */}
+          {orgs.length > 0 && (
+            <div className="logic-orgs-section">
+              <div className="logic-divider" />
+              <div className="logic-orgs-title">Sources</div>
+              {orgs.map(org => {
+                const orgRate = org.gateways.reduce((s, gw) => s + (gw.rate || 0), 0);
+                return (
+                  <div className="org-pill" key={org.id}>
+                    <div className="org-pill-dot" style={{
+                      background: org.color,
+                      boxShadow: `0 0 6px ${org.color}`,
+                    }} />
+                    <span className="org-pill-name">{org.name}</span>
+                    <span className="org-pill-rate" style={{ color: org.color }}>
+                      {orgRate.toLocaleString()} msg/s
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── App ────────────────────────────────────────────────────────────────────
+
+    function App() {
+      const [orgs,      setOrgs]      = useState([]);
+      const [showModal, setShowModal] = useState(false);
+      const [metrics,   setMetrics]   = useState({
+        totalMsgsPerSec: 0, avgLatency: 6, cpuLoad: 0,
+        dbWrite: 2, queue: 0, dropped: 0, status: 'healthy',
+      });
+      const [history, setHistory] = useState([]);
+
+      const logicRef  = useRef(null);
+      const gwRefs    = useRef({});
+      const orgsRef   = useRef([]);
+
+      // Keep orgsRef in sync for the animation loop
+      useEffect(() => { orgsRef.current = orgs; }, [orgs]);
+
+      // Simulation tick
+      useEffect(() => {
+        const tick = setInterval(() => {
+          setOrgs(prev => {
+            const updated = prev.map(org => ({
+              ...org,
+              gateways: org.gateways.map(gw => ({
+                ...gw,
+                rate: computeGatewayRate(gw),
+              })),
+            }));
+            const m = computeLogicMetrics(updated);
+            setMetrics(m);
+            setHistory(h => [...h.slice(-59), m.totalMsgsPerSec]);
+            return updated;
+          });
+        }, 1000);
+        return () => clearInterval(tick);
+      }, []);
+
+      // ── Particle canvas ──────────────────────────────────────────────────────
+      useEffect(() => {
+        const canvas = document.getElementById('particle-canvas');
+        const ctx    = canvas.getContext('2d');
+
+        const resize = () => {
+          canvas.width  = window.innerWidth;
+          canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Particle pool
+        let pool       = [];
+        let spawnTimes = {};  // gwId → last spawn timestamp
+        let raf;
+
+        function animate(ts) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          const logicEl = logicRef.current;
+          if (!logicEl) { raf = requestAnimationFrame(animate); return; }
+
+          const lr = logicEl.getBoundingClientRect();
+          // Target: left-center of logic card
+          const tx = lr.left + 6;
+          const ty = lr.top  + lr.height * 0.42;
+
+          const currentOrgs = orgsRef.current;
+
+          currentOrgs.forEach(org => {
+            org.gateways.forEach(gw => {
+              const ref = gwRefs.current[gw.id];
+              if (!ref?.current) return;
+
+              const gr = ref.current.getBoundingClientRect();
+              const sx = gr.right  - 6;
+              const sy = gr.top    + gr.height / 2;
+
+              // Bezier control points: S-curve
+              const dist = tx - sx;
+              const cx1  = sx + dist * 0.42;
+              const cy1  = sy;
+              const cx2  = sx + dist * 0.58;
+              const cy2  = ty;
+
+              // Draw faint path
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              ctx.bezierCurveTo(cx1, cy1, cx2, cy2, tx, ty);
+              ctx.strokeStyle = org.color + '14';
+              ctx.lineWidth   = 1.2;
+              ctx.stroke();
+
+              // Spawn particles proportional to rate
+              const rate    = gw.rate || 0;
+              if (rate === 0) return;
+
+              // Clamp density: max 20 particles/sec per gateway visible
+              const density      = Math.min(rate / 30, 20);
+              const spawnMs      = 1000 / density;
+              const lastSpawn    = spawnTimes[gw.id] || 0;
+
+              if (ts - lastSpawn >= spawnMs) {
+                spawnTimes[gw.id] = ts;
+                pool.push({
+                  t:     0,
+                  speed: 0.0038 + Math.random() * 0.0028,
+                  color: org.color,
+                  r:     1.8 + Math.random() * 1.4,
+                  sx, sy, cx1, cy1, cx2, cy2, tx, ty,
+                });
+              }
+            });
+          });
+
+          // Update + draw particles
+          pool = pool.filter(p => {
+            p.t += p.speed;
+            if (p.t >= 1) return false;
+
+            const x = bez(p.t, p.sx, p.cx1, p.cx2, p.tx);
+            const y = bez(p.t, p.sy, p.cy1, p.cy2, p.ty);
+
+            // Fade in/out: alpha peaks at t=0.5
+            const alpha = Math.sin(p.t * Math.PI) * 0.85 + 0.15;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.shadowBlur  = 10;
+            ctx.shadowColor = p.color;
+            ctx.beginPath();
+            ctx.arc(x, y, p.r, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+            // Inner bright core
+            ctx.beginPath();
+            ctx.arc(x, y, p.r * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = alpha * 0.6;
+            ctx.fill();
+            ctx.restore();
+
+            return true;
+          });
+
+          raf = requestAnimationFrame(animate);
+        }
+
+        raf = requestAnimationFrame(animate);
+        return () => {
+          cancelAnimationFrame(raf);
+          window.removeEventListener('resize', resize);
+        };
+      }, []);
+
+      const nextColor = ORG_COLORS[orgs.length % ORG_COLORS.length];
+
+      const globalStats = {
+        totalMsgs:   metrics.totalMsgsPerSec,
+        totalNodes:  orgs.reduce((s, o) => s + o.gateways.reduce((ss, g) => ss + g.nodeCount, 0), 0),
+        totalGws:    orgs.reduce((s, o) => s + o.gateways.length, 0),
+        totalOrgs:   orgs.length,
+      };
+
+      const statusColor = (STATUS[metrics.status] || STATUS.healthy).color;
+
+      return (
+        <>
+          {/* Header */}
+          <div className="header">
+            <div className="header-title">
+              <div className="pulse-dot" style={{
+                background: statusColor,
+                boxShadow: `0 0 0 0 ${statusColor}99`,
+              }} />
+              Stress Test Monitor
+            </div>
+
+            <div className="header-divider" />
+
+            <div className="header-stats">
+              <div className="stat-item">
+                <div className="stat-label">Throughput</div>
+                <div className="stat-value" style={{ color: statusColor }}>
+                  {globalStats.totalMsgs.toLocaleString()}
+                  <span className="stat-unit">msg/s</span>
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Latency</div>
+                <div className="stat-value" style={{ color: statusColor }}>
+                  {metrics.avgLatency}
+                  <span className="stat-unit">ms</span>
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">CPU</div>
+                <div className="stat-value" style={{ color: metrics.cpuLoad > 70 ? STATUS.warning.color : 'inherit' }}>
+                  {metrics.cpuLoad}
+                  <span className="stat-unit">%</span>
+                </div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Organizations</div>
+                <div className="stat-value">{globalStats.totalOrgs}</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Gateways</div>
+                <div className="stat-value">{globalStats.totalGws}</div>
+              </div>
+              <div className="stat-item">
+                <div className="stat-label">Nodes</div>
+                <div className="stat-value">{globalStats.totalNodes.toLocaleString()}</div>
+              </div>
+            </div>
+
+            <button className="btn-add-org" onClick={() => setShowModal(true)}>
+              + Add Organization
+            </button>
+          </div>
+
+          {/* Main */}
+          <div className="main">
+            {/* Orgs */}
+            <div className="orgs-panel">
+              {orgs.length === 0 ? (
+                <div className="empty-state">
+                  <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                    <path d="M32 4L60 20V44L32 60L4 44V20L32 4Z"
+                      stroke="#4FC3F7" strokeWidth="1.5" fill="rgba(79,195,247,0.05)" />
+                    <path d="M32 16L48 25V43L32 52L16 43V25L32 16Z"
+                      stroke="#4FC3F7" strokeWidth="1" strokeDasharray="4 2" fill="none" opacity="0.4" />
+                    <circle cx="32" cy="32" r="4" fill="#4FC3F7" opacity="0.6" />
+                  </svg>
+                  <div className="empty-state-title">No organizations yet</div>
+                  <div className="empty-state-sub">
+                    Add an organization to start<br />the stress test simulation.
+                  </div>
+                </div>
+              ) : (
+                orgs.map(org => (
+                  <OrgCluster key={org.id} org={org} gwRefs={gwRefs} />
+                ))
+              )}
+            </div>
+
+            {/* Logic */}
+            <div className="logic-panel">
+              <LogicCard
+                metrics={metrics}
+                logicRef={logicRef}
+                orgs={orgs}
+                history={history}
+              />
+            </div>
+          </div>
+
+          {/* Modal */}
+          {showModal && (
+            <AddOrgModal
+              onClose={() => setShowModal(false)}
+              onAdd={org => setOrgs(prev => [...prev, org])}
+              nextColor={nextColor}
+            />
+          )}
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
